@@ -24,7 +24,10 @@ users = {}
 ASK_ROLE, ASK_NAME, ASK_PHONE, KELISH_RASM, KETISH_RASM = range(5)
 
 def get_sheet():
-    creds = Credentials.from_service_account_info(json.loads(CREDS_JSON), scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    creds = Credentials.from_service_account_info(
+        json.loads(CREDS_JSON),
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
     return gspread.authorize(creds).open_by_key(SPREADSHEET_ID).sheet1
 
 def get_time():
@@ -37,7 +40,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [KeyboardButton("🧾 Kassir"), KeyboardButton("📦 Sklad xodimi")],
         [KeyboardButton("🧍 Sotuvchi")]
     ]
-    await update.message.reply_text("Assalomu alaykum, ANT Xodim botiga xush kelibsiz!\n\nIltimos, lavozimingizni tanlang:", reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True))
+    await update.message.reply_text(
+        "Assalomu alaykum, ANT Xodim botiga xush kelibsiz!\n\nIltimos, lavozimingizni tanlang:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
     return ASK_ROLE
 
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -48,16 +54,22 @@ async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users[update.effective_user.id]['name'] = update.message.text
     contact_btn = KeyboardButton("📞 Raqamni yuborish", request_contact=True)
-    await update.message.reply_text("Iltimos, telefon raqamingizni yuboring:", reply_markup=ReplyKeyboardMarkup([[contact_btn]], resize_keyboard=True))
+    await update.message.reply_text(
+        "Iltimos, telefon raqamingizni yuboring:",
+        reply_markup=ReplyKeyboardMarkup([[contact_btn]], resize_keyboard=True)
+    )
     return ASK_PHONE
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users[update.effective_user.id]['phone'] = update.message.contact.phone_number
-    await update.message.reply_text("✅ Ma'lumotlar qabul qilindi. Endi kerakli amalni tanlang:", reply_markup=ReplyKeyboardMarkup([
-        [KeyboardButton("📍 Ishga keldim")],
-        [KeyboardButton("🏁 Ishdan ketdim")],
-        [KeyboardButton("👤 Profilim")]
-    ], resize_keyboard=True))
+    await update.message.reply_text(
+        "✅ Ma'lumotlar qabul qilindi. Endi kerakli amalni tanlang:",
+        reply_markup=ReplyKeyboardMarkup([
+            [KeyboardButton("📍 Ishga keldim")],
+            [KeyboardButton("🏁 Ishdan ketdim")],
+            [KeyboardButton("👤 Profilim")]
+        ], resize_keyboard=True)
+    )
     return ConversationHandler.END
 
 async def kelish(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -79,8 +91,6 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
     try:
         photo = update.message.photo[-1]
         file = await photo.get_file()
-        file_path = file.file_path
-        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
     except Exception as e:
         await update.message.reply_text(f"❗ Rasmni olishda xatolik: {e}")
         return ConversationHandler.END
@@ -117,7 +127,7 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
             sheet.update_cell(row_index, 8, str(worked))
 
     sheet.update_cell(row_index, 9, holat)
-    sheet.update_cell(row_index, 10, file_url)
+    sheet.update_cell(row_index, 10, "Telegramga yuborilgan")
 
     caption = f"📅 {sana}\n👤 {data.get('name')}\n📞 {data.get('phone')}\n📌 {holat} — {vaqt_str}"
     await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=caption)
