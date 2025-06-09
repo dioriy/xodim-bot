@@ -19,10 +19,15 @@ GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
+# Store user data and states
 users = {}
+user_states = {}
+
+# Conversation states
 ASK_ROLE, ASK_NAME, ASK_PHONE, KELISH_RASM, KETISH_RASM = range(5)
 
 def get_sheet():
+    """Initialize Google Sheets connection"""
     try:
         creds = Credentials.from_service_account_info(
             json.loads(CREDS_JSON),
@@ -30,15 +35,19 @@ def get_sheet():
         )
         return gspread.authorize(creds).open_by_key(SPREADSHEET_ID).worksheet("davomat")
     except Exception as e:
-        print(f"Google Sheets xatolik: {e}")
+        print(f"Google Sheets error: {e}")
         return None
 
 def get_time():
+    """Get current time in Tashkent timezone"""
     return datetime.now(pytz.timezone("Asia/Tashkent"))
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start command handler"""
     user_id = update.effective_user.id
     users[user_id] = {}
+    user_states[user_id] = None
+    
     keyboard = [
         [KeyboardButton("🧾 Kassir"), KeyboardButton("📦 Sklad xodimi")],
         [KeyboardButton("🧍 Sotuvchi")]
@@ -50,12 +59,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_ROLE
 
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    users[update.effective_user.id]['role'] = update.message.text
+    """Handle role selection"""
+    user_id = update.effective_user.id
+    users[user_id]['role'] = update.message.text
     await update.message.reply_text("Iltimos, ism familiyangizni to'liq kiriting:")
     return ASK_NAME
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    users[update.effective_user.id]['name'] = update.message.text
+    """Handle name input"""
+    user_id = update.effective_user.id
+    users[user_id]['name'] = update.message.text
     contact_btn = KeyboardButton("📞 Raqamni yuborish", request_contact=True)
     await update.message.reply_text(
         "Iltimos, telefon raqamingizni yuboring:",
@@ -64,10 +77,10 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_PHONE
 
 async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.contact:
-        users[update.effective_user.id]['phone'] = update.message.contact.phone_number
-    else:
-        users[update.effective_user.id]['phone'] = update.message.text
+    """Handle phone number and show main menu"""
+    user_id = update.effective_user.id
+    users[user_id]['phone'] = update.message.contact.phone_number
+    user_states[user_id] = None
     
     await update.message.reply_text(
         "✅ Ma'lumotlar qabul qilindi. Endi kerakli amalni tanlang:",
@@ -80,40 +93,29 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def kelish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'came to work' button"""
     user_id = update.effective_user.id
-    if user_id not in users or 'name' not in users[user_id]:
-        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
-        return ConversationHandler.END
-    
-    await update.message.reply_text("📸 Iltimos, ishga kelganingiz haqida rasm yuboring")
+    user_states[user_id] = "kelish"
+    await update.message.reply_text("📸 Iltimos, ishga kelganingiz haqida rasm yuboring:")
     return KELISH_RASM
 
 async def ketish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'left work' button"""
     user_id = update.effective_user.id
-    if user_id not in users or 'name' not in users[user_id]:
-        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
-        return ConversationHandler.END
-    
-    await update.message.reply_text("📸 Iltimos, ishdan ketganingiz haqida rasm yuboring")
+    user_states[user_id] = "ketish"
+    await update.message.reply_text("📸 Iltimos, ishdan ketganingiz haqida rasm yuboring:")
     return KETISH_RASM
 
-async def kelish_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("❗ Iltimos, rasm yuboring!")
-        return KELISH_RASM
-    
-    await process_rasm(update, context, "kelish")
-    return ConversationHandler.END
+async def handle_kelish_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo for coming to work"""
+    return await process_photo(update, context, "kelish")
 
-async def ketish_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not update.message.photo:
-        await update.message.reply_text("❗ Iltimos, rasm yuboring!")
-        return KETISH_RASM
-    
-    await process_rasm(update, context, "ketish")
-    return ConversationHandler.END
+async def handle_ketish_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo for leaving work"""
+    return await process_photo(update, context, "ketish")
 
-async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat: str):
+async def process_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, action_type: str):
+    """Process uploaded photo and save to Google Sheets"""
     user = update.effective_user
     user_id = user.id
     data = users.get(user_id)
@@ -123,41 +125,50 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
         return ConversationHandler.END
 
     try:
-        vaqt = get_time()
-        vaqt_str = vaqt.strftime("%Y-%m-%d %H:%M:%S")
+        # Get current time
+        current_time = get_time()
         
+        # Format data for Google Sheets
+        sheet_data = [
+            current_time.strftime("%Y-%m-%d"),  # Date
+            current_time.strftime("%H:%M:%S"),  # Time
+            data['name'],                       # Name
+            data['role'],                       # Role
+            data['phone'],                      # Phone
+            "Keldi" if action_type == "kelish" else "Ketdi",  # Action
+            user.username or "N/A",             # Telegram username
+            str(user_id)                        # Telegram user ID
+        ]
+        
+        # Save to Google Sheets
         sheet = get_sheet()
         if sheet:
-            sheet.append_row([
-                data['name'],
-                data['role'], 
-                data['phone'],
-                holat,
-                vaqt_str
-            ])
+            sheet.append_row(sheet_data)
+            print(f"Data saved to Google Sheets: {sheet_data}")
+        else:
+            print("Failed to connect to Google Sheets")
         
-        # Guruhga xabar yuborish
+        # Send to group chat if configured
         if GROUP_CHAT_ID:
-            photo = update.message.photo[-1]
-            file = await context.bot.get_file(photo.file_id)
-            
-            caption = f"""
-👤 Xodim: {data['name']}
-💼 Lavozim: {data['role']}
+            group_message = f"""
+📝 Xodim hisoboti
+
+👤 Ism: {data['name']}
+🏢 Lavozim: {data['role']}
 📞 Telefon: {data['phone']}
-📅 Vaqt: {vaqt_str}
-📍 Holat: {"Ishga keldi" if holat == "kelish" else "Ishdan ketdi"}
-            """
-            
-            await context.bot.send_photo(
+⏰ Vaqt: {current_time.strftime('%Y-%m-%d %H:%M:%S')}
+🔄 Harakat: {"Ishga keldi" if action_type == "kelish" else "Ishdan ketdi"}
+"""
+            await context.bot.send_message(
                 chat_id=GROUP_CHAT_ID,
-                photo=file.file_id,
-                caption=caption.strip()
+                text=group_message
             )
         
+        # Send confirmation to user
+        action_text = "ishga kelganingiz" if action_type == "kelish" else "ishdan ketganingiz"
         await update.message.reply_text(
-            f"✅ {holat.capitalize()} vaqti muvaffaqiyatli qayd qilindi!\n"
-            f"⏰ Vaqt: {vaqt_str}",
+            f"✅ Rasm qabul qilindi! {action_text.capitalize()} qayd etildi.\n"
+            f"⏰ Vaqt: {current_time.strftime('%Y-%m-%d %H:%M:%S')}",
             reply_markup=ReplyKeyboardMarkup([[ 
                 KeyboardButton("📍 Ishga keldim"),
                 KeyboardButton("🏁 Ishdan ketdim"),
@@ -165,18 +176,19 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
             ]], resize_keyboard=True)
         )
         
+        # Reset user state
+        user_states[user_id] = None
+        
     except Exception as e:
-        print(f"Xatolik: {e}")
+        print(f"Error processing photo: {e}")
         await update.message.reply_text(
-            f"❗️ Xatolik yuz berdi: {str(e)}",
-            reply_markup=ReplyKeyboardMarkup([[ 
-                KeyboardButton("📍 Ishga keldim"),
-                KeyboardButton("🏁 Ishdan ketdim"),
-                KeyboardButton("👤 Profilim")
-            ]], resize_keyboard=True)
+            f"❗ Xatolik yuz berdi: {str(e)}\nIltimos, qaytadan urinib ko'ring."
         )
+    
+    return ConversationHandler.END
 
-async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show user profile"""
     user_id = update.effective_user.id
     data = users.get(user_id)
     
@@ -184,64 +196,97 @@ async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
         return
     
-    profil_text = f"""
-👤 Ism: {data['name']}
-💼 Lavozim: {data['role']}
+    profile_text = f"""
+👤 Sizning profilingiz:
+
+📝 Ism: {data['name']}
+🏢 Lavozim: {data['role']}
 📞 Telefon: {data['phone']}
-    """
+🆔 Telegram ID: {user_id}
+"""
     
-    await update.message.reply_text(profil_text.strip())
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "❌ Amal bekor qilindi",
-        reply_markup=ReplyKeyboardRemove()
+        profile_text,
+        reply_markup=ReplyKeyboardMarkup([[ 
+            KeyboardButton("📍 Ishga keldim"),
+            KeyboardButton("🏁 Ishdan ketdim"),
+            KeyboardButton("👤 Profilim")
+        ]], resize_keyboard=True)
     )
-    return ConversationHandler.END
 
-def main():
-    if not BOT_TOKEN:
-        print("❗ BOT_TOKEN topilmadi!")
+async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages outside conversation"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Check if user is registered
+    if user_id not in users or 'name' not in users[user_id]:
+        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
         return
     
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    # Handle menu buttons
+    if text == "📍 Ishga keldim":
+        await kelish(update, context)
+    elif text == "🏁 Ishdan ketdim":
+        await ketish(update, context)
+    elif text == "👤 Profilim":
+        await show_profile(update, context)
+    else:
+        await update.message.reply_text(
+            "Iltimos, quyidagi tugmalardan birini tanlang:",
+            reply_markup=ReplyKeyboardMarkup([[ 
+                KeyboardButton("📍 Ishga keldim"),
+                KeyboardButton("🏁 Ishdan ketdim"),
+                KeyboardButton("👤 Profilim")
+            ]], resize_keyboard=True)
+        )
+
+async def handle_invalid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photos sent without proper state"""
+    user_id = update.effective_user.id
     
-    # Ro'yxatdan o'tish conversation handler
+    if user_id not in users or 'name' not in users[user_id]:
+        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
+        return
+    
+    await update.message.reply_text(
+        "❗ Avval 'Ishga keldim' yoki 'Ishdan ketdim' tugmasini bosing, keyin rasm yuboring.",
+        reply_markup=ReplyKeyboardMarkup([[ 
+            KeyboardButton("📍 Ishga keldim"),
+            KeyboardButton("🏁 Ishdan ketdim"),
+            KeyboardButton("👤 Profilim")
+        ]], resize_keyboard=True)
+    )
+
+def main():
+    """Main function to run the bot"""
+    print("Starting bot...")
+    
+    # Create application
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    
+    # Create conversation handler for registration
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             ASK_ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_phone)],
-            ASK_PHONE: [MessageHandler(filters.CONTACT | filters.TEXT, show_menu)],
+            ASK_PHONE: [MessageHandler(filters.CONTACT, show_menu)],
+            KELISH_RASM: [MessageHandler(filters.PHOTO, handle_kelish_photo)],
+            KETISH_RASM: [MessageHandler(filters.PHOTO, handle_ketish_photo)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler("start", start)],
+        per_message=False
     )
     
-    # Kelish conversation handler
-    kelish_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^📍 Ishga keldim$"), kelish)],
-        states={
-            KELISH_RASM: [MessageHandler(filters.PHOTO, kelish_rasm)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
+    # Add handlers
+    application.add_handler(conv_handler)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_invalid_photo))
     
-    # Ketish conversation handler
-    ketish_handler = ConversationHandler(
-        entry_points=[MessageHandler(filters.Regex("^🏁 Ishdan ketdim$"), ketish)],
-        states={
-            KETISH_RASM: [MessageHandler(filters.PHOTO, ketish_rasm)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
-    
-    app.add_handler(conv_handler)
-    app.add_handler(kelish_handler)
-    app.add_handler(ketish_handler)
-    app.add_handler(MessageHandler(filters.Regex("^👤 Profilim$"), profil))
-    
-    print("Bot ishga tushdi...")
-    app.run_polling()
+    # Start bot
+    print("Bot is running...")
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
