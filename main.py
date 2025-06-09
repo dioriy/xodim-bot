@@ -21,7 +21,6 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 users = {}
-
 ASK_ROLE, ASK_NAME, ASK_PHONE, KELISH_RASM, KETISH_RASM = range(5)
 
 def get_sheet():
@@ -83,13 +82,17 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
         await update.message.reply_text("❗ Avval /start buyrug‘i bilan ro‘yxatdan o‘ting.")
         return ConversationHandler.END
 
+    if not update.message.photo:
+        await update.message.reply_text("❗ Iltimos, faqat rasm yuboring. Hujjat yoki boshqa fayl emas.")
+        return ConversationHandler.END
+
     try:
         photo = update.message.photo[-1]
         file = await photo.get_file()
         file_path = file.file_path
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-    except:
-        await update.message.reply_text("❗ Rasmni olishda xatolik. Qayta urinib ko‘ring.")
+    except Exception as e:
+        await update.message.reply_text(f"❗ Rasmni olishda xatolik yuz berdi: {e}")
         return ConversationHandler.END
 
     vaqt = get_time()
