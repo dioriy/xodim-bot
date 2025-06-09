@@ -4,9 +4,7 @@ from datetime import datetime
 import pytz
 import gspread
 from google.oauth2.service_account import Credentials
-from telegram import (
-    Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
-)
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder, ContextTypes, CommandHandler,
     MessageHandler, ConversationHandler, filters
@@ -28,7 +26,7 @@ def get_sheet():
         json.loads(CREDS_JSON),
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-    return gspread.authorize(creds).open_by_key(SPREADSHEET_ID).sheet1
+    return gspread.authorize(creds).open_by_key(SPREADSHEET_ID).worksheet("davomat")  # "davomat" varaqqa yoziladi
 
 def get_time():
     return datetime.now(pytz.timezone("Asia/Tashkent"))
@@ -64,7 +62,7 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users[update.effective_user.id]['phone'] = update.message.contact.phone_number
     await update.message.reply_text(
         "✅ Ma'lumotlar qabul qilindi. Endi kerakli amalni tanlang:",
-        reply_markup=ReplyKeyboardMarkup([[
+        reply_markup=ReplyKeyboardMarkup([[ 
             KeyboardButton("📍 Ishga keldim"),
             KeyboardButton("🏁 Ishdan ketdim"),
             KeyboardButton("👤 Profilim")
@@ -99,7 +97,7 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
     sana = vaqt.strftime("%Y-%m-%d")
     vaqt_str = vaqt.strftime("%H:%M")
 
-    sheet = get_sheet()
+    sheet = get_sheet()  # "davomat" varaqqa ulanish
     rows = sheet.get_all_records()
     row_index = None
     for i, row in enumerate(rows, start=2):
