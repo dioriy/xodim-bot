@@ -64,11 +64,11 @@ async def show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users[update.effective_user.id]['phone'] = update.message.contact.phone_number
     await update.message.reply_text(
         "✅ Ma'lumotlar qabul qilindi. Endi kerakli amalni tanlang:",
-        reply_markup=ReplyKeyboardMarkup([
-            [KeyboardButton("📍 Ishga keldim")],
-            [KeyboardButton("🏁 Ishdan ketdim")],
-            [KeyboardButton("👤 Profilim")]
-        ], resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup([[
+            KeyboardButton("📍 Ishga keldim"),
+            KeyboardButton("🏁 Ishdan ketdim"),
+            KeyboardButton("👤 Profilim")
+        ]], resize_keyboard=True)
     )
     return ConversationHandler.END
 
@@ -108,10 +108,8 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
             break
 
     if not row_index:
-        sheet.append_row([
-            sana, str(user_id), data.get("name"), data.get("role"), data.get("phone"),
-            "", "", "", "", ""
-        ])
+        sheet.append_row([sana, str(user_id), data.get("name"), data.get("role"), data.get("phone"),
+                          "", "", "", "", ""])
         rows = sheet.get_all_records()
         row_index = len(rows) + 1
 
@@ -129,8 +127,13 @@ async def process_rasm(update: Update, context: ContextTypes.DEFAULT_TYPE, holat
     sheet.update_cell(row_index, 9, holat)
     sheet.update_cell(row_index, 10, "Telegramga yuborilgan")
 
-    caption = f"📅 {sana}\n👤 {data.get('name')}\n📞 {data.get('phone')}\n📌 {holat} — {vaqt_str}"
-    await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=caption)
+    try:
+        caption = f"📅 {sana}\n👤 {data.get('name')}\n📞 {data.get('phone')}\n📌 {holat} — {vaqt_str}"
+        await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=caption)
+    except Exception as e:
+        await update.message.reply_text(f"❗ Rasmni yuborishda xatolik: {e}")
+        return ConversationHandler.END
+
     await update.message.reply_text("✅ Ma'lumotlar qabul qilindi.")
     return ConversationHandler.END
 
