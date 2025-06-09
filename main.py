@@ -112,4 +112,131 @@ async def process_photo(update: Update, context: ContextTypes.DEFAULT_TYPE, acti
             data['role'],
             data['phone'],
             "Keldi" if action_type == "kelish" else "Ketdi",
-            user.usern
+            user.username or "N/A",
+            str(user_id)
+        ]
+
+        sheet = get_sheet()
+        if sheet:
+            sheet.append_row(sheet_data)
+            print(f"Data saved to Google Sheets: {sheet_data}")
+        else:
+            print("Failed to connect to Google Sheets")
+
+        if GROUP_CHAT_ID:
+            group_message = f"""
+📝 Xodim hisoboti
+
+👤 Ism: {data['name']}
+🏢 Lavozim: {data['role']}
+📞 Telefon: {data['phone']}
+⏰ Vaqt: {current_time.strftime('%Y-%m-%d %H:%M:%S')}
+🔄 Harakat: {"Ishga keldi" if action_type == "kelish" else "Ishdan ketdi"}
+"""
+            # Rasmdan fayl_id ni olish va rasmni guruhga tashlash
+            photo_file_id = update.message.photo[-1].file_id
+            await context.bot.send_photo(
+                chat_id=GROUP_CHAT_ID,
+                photo=photo_file_id,
+                caption=group_message
+            )
+
+        action_text = "ishga kelganingiz" if action_type == "kelish" else "ishdan ketganingiz"
+        await update.message.reply_text(
+            f"✅ Rasm qabul qilindi! {action_text.capitalize()} qayd etildi.\n"
+            f"⏰ Vaqt: {current_time.strftime('%Y-%m-%d %H:%M:%S')}",
+            reply_markup=ReplyKeyboardMarkup([
+                [KeyboardButton("📍 Ishga keldim"),
+                KeyboardButton("🏁 Ishdan ketdim"),
+                KeyboardButton("👤 Profilim")]
+            ], resize_keyboard=True)
+        )
+    except Exception as e:
+        print(f"Error processing photo: {e}")
+        await update.message.reply_text(
+            f"❗ Xatolik yuz berdi: {str(e)}\nIltimos, qaytadan urinib ko'ring."
+        )
+    return ConversationHandler.END
+
+async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    data = users.get(user_id)
+    if not data or 'name' not in data:
+        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
+        return
+    profile_text = f"""
+👤 Sizning profilingiz:
+
+📝 Ism: {data['name']}
+🏢 Lavozim: {data['role']}
+📞 Telefon: {data['phone']}
+🆔 Telegram ID: {user_id}
+"""
+    await update.message.reply_text(
+        profile_text,
+        reply_markup=ReplyKeyboardMarkup([
+            [KeyboardButton("📍 Ishga keldim"),
+            KeyboardButton("🏁 Ishdan ketdim"),
+            KeyboardButton("👤 Profilim")]
+        ], resize_keyboard=True)
+    )
+
+async def handle_text_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+    if user_id not in users or 'name' not in users[user_id]:
+        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
+        return
+    if text == "📍 Ishga keldim":
+        return await kelish(update, context)
+    elif text == "🏁 Ishdan ketdim":
+        return await ketish(update, context)
+    elif text == "👤 Profilim":
+        await show_profile(update, context)
+    else:
+        await update.message.reply_text(
+            "Iltimos, quyidagi tugmalardan birini tanlang:",
+            reply_markup=ReplyKeyboardMarkup([
+                [KeyboardButton("📍 Ishga keldim"),
+                KeyboardButton("🏁 Ishdan ketdim"),
+                KeyboardButton("👤 Profilim")]
+            ], resize_keyboard=True)
+        )
+
+async def handle_invalid_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in users or 'name' not in users[user_id]:
+        await update.message.reply_text("❗ Avval /start buyrug'i bilan ro'yxatdan o'ting.")
+        return
+    await update.message.reply_text(
+        "❗ Avval 'Ishga keldim' yoki 'Ishdan ketdim' tugmasini bosing, keyin rasm yuboring.",
+        reply_markup=ReplyKeyboardMarkup([
+            [KeyboardButton("📍 Ishga keldim"),
+            KeyboardButton("🏁 Ishdan ketdim"),
+            KeyboardButton("👤 Profilim")]
+        ], resize_keyboard=True)
+    )
+
+def main():
+    print("Starting bot...")
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    conv_handler = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ASK_ROLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
+            ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_phone)],
+            ASK_PHONE: [MessageHandler(filters.CONTACT, show_menu)],
+            KELISH_RASM: [MessageHandler(filters.PHOTO, handle_kelish_photo)],
+            KETISH_RASM: [MessageHandler(filters.PHOTO, handle_ketish_photo)],
+        },
+        fallbacks=[CommandHandler("start", start)],
+        per_message=False
+    )
+    application.add_handler(conv_handler)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_messages))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_invalid_photo))
+    print("Bot is running...")
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
