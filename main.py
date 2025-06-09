@@ -22,72 +22,138 @@ CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 def get_sheet():
     creds_dict = json.loads(CREDS_JSON)
-    creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/spreadsheets"])
-    return gspread.authorize(creds).open_by_key(SPREADSHEET_ID).sheet1
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    return client.open_by_key(SPREADSHEET_ID).sheet1
 
-def get_time():
-    return datetime.now(pytz.timezone("Asia/Tashkent"))
+def get_tashkent_time():
+    tz = pytz.timezone("Asia/Tashkent")
+    return datetime.now(tz)
 
-KEL = KET = range(2)
+KELISH, KETISH = range(2)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kb = [[KeyboardButton("📍 Kelish")], [KeyboardButton("🏁 Ketish")], [KeyboardButton("👤 Profilim")]]
-    await update.message.reply_text("Assalomu alaykum! Amalni tanlang:", reply_markup=ReplyKeyboardMarkup(kb, resize_keyboard=True))
+    keyboard = [
+        [KeyboardButton("📍 Kelish")],
+        [KeyboardButton("🏁 Ketish")],
+        [KeyboardButton("👤 Profilim")]
+    ]
+    await update.message.reply_text(
+        "Assalomu alaykum!\nKerakli amalni tanlang:",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
 
-async def kel_start(update, context):
-    await update.message.reply_text("Rasm yubor...", reply_markup=ReplyKeyboardRemove()); return KEL
+async def kelish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📸 Iltimos, rasm yuboring", reply_markup=ReplyKeyboardRemove())
+    return KELISH
 
-async def kel_done(update, context):
-    u = update.effective_user; ph = update.message.photo[-1]; file = await ph.get_file()
-    t = get_time(); tstr = t.strftime("%H:%M"); date = t.strftime("%Y-%m-%d")
-    sh = get_sheet(); rs = sh.get_all_records()
-    r = next((i for i,rec in enumerate(rs, start=2) if str(rec["Telegram ID"])==str(u.id) and rec["Sana"]==date), None)
-    if r: sh.update_cell(r,4,tstr)
-    else: sh.append_row([date,str(u.id),u.full_name,tstr,"",""])
-    await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=f"✅ Kelgan — {u.full_name}\n🕒 {tstr}", parse_mode="Markdown")
-    await update.message.reply_text("Kelish yozildi."); return ConversationHandler.END
+async def rasm_kelish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    photo = update.message.photo[-1]
+    file = await photo.get_file()
+    vaqt = get_tashkent_time()
+    vaqt_str = vaqt.strftime("%H:%M")
+    sana = vaqt.strftime("%Y-%m-%d")
 
-async def ket_start(update, context):
-    await update.message.reply_text("Rasm yubor...", reply_markup=ReplyKeyboardRemove()); return KET
+    sheet = get_sheet()
+    rows = sheet.get_all_records()
+    row_index = None
+    for i, row in enumerate(rows, start=2):
+        if str(row["Telegram ID"]) == str(user.id) and row["Sana"] == sana:
+            row_index = i
+            break
 
-async def ket_done(update, context):
-    u = update.effective_user; ph = update.message.photo[-1]; file = await ph.get_file()
-    t = get_time(); tstr = t.strftime("%H:%M"); date = t.strftime("%Y-%m-%d")
-    sh = get_sheet(); rs = sh.get_all_records()
-    r = next((i for i,rec in enumerate(rs, start=2) if str(rec["Telegram ID"])==str(u.id) and rec["Sana"]==date), None)
-    if r:
-        sh.update_cell(r,5,tstr)
-        t0 = sh.cell(r,4).value
-        if t0:
-            h = round((datetime.strptime(tstr,"%H:%M")-datetime.strptime(t0,"%H:%M")).seconds/3600,2)
-            sh.update_cell(r,6,str(h))
+    if row_index:
+        sheet.update_cell(row_index, 4, vaqt_str)
     else:
-        sh.append_row([date,str(u.id),u.full_name,"",tstr,""])
-    await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=f"🏁 Ketgan — {u.full_name}\n🕒 {tstr}", parse_mode="Markdown")
-    await update.message.reply_text("Ketish yozildi."); return ConversationHandler.END
+        sheet.append_row([sana, str(user.id), user.full_name, vaqt_str, "", ""])
 
-async def profil(update, context):
-    u = update.effective_user; sh=get_sheet(); rs=sh.get_all_records()
-    days=0; hrs=0.0
-    for rec in rs:
-        if str(rec["Telegram ID"])==str(u.id):
-            days+=1; try: hrs+=float(rec.get("Ishlagan vaqt (soat)",0))
-            except: pass
-    await update.message.reply_text(f"👤 {u.full_name}\n📆 Kunlar: {days}\n🕒 Soatlar: {round(hrs,2)}")
+    caption = f"✅ *Kelgan* — {user.full_name}\n🕒 {vaqt_str}"
+    await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=caption, parse_mode="Markdown")
+    await update.message.reply_text("✅ Kelish vaqti yozildi.")
+    return ConversationHandler.END
 
-async def cancel(update,context):
-    await update.message.reply_text("Bekor",reply_markup=ReplyKeyboardRemove()); return ConversationHandler.END
+async def ketish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📸 Ketish rasmi yuboring", reply_markup=ReplyKeyboardRemove())
+    return KETISH
+
+async def rasm_ketish(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    photo = update.message.photo[-1]
+    file = await photo.get_file()
+    vaqt = get_tashkent_time()
+    vaqt_str = vaqt.strftime("%H:%M")
+    sana = vaqt.strftime("%Y-%m-%d")
+
+    sheet = get_sheet()
+    rows = sheet.get_all_records()
+    row_index = None
+    for i, row in enumerate(rows, start=2):
+        if str(row["Telegram ID"]) == str(user.id) and row["Sana"] == sana:
+            row_index = i
+            break
+
+    if row_index:
+        sheet.update_cell(row_index, 5, vaqt_str)
+        kelgan_vaqt = sheet.cell(row_index, 4).value
+        if kelgan_vaqt:
+            fmt = "%H:%M"
+            t1 = datetime.strptime(kelgan_vaqt, fmt)
+            t2 = datetime.strptime(vaqt_str, fmt)
+            worked_hours = round((t2 - t1).seconds / 3600, 2)
+            sheet.update_cell(row_index, 6, str(worked_hours))
+    else:
+        sheet.append_row([sana, str(user.id), user.full_name, "", vaqt_str, ""])
+
+    caption = f"🏁 *Ketgan* — {user.full_name}\n🕒 {vaqt_str}"
+    await context.bot.send_photo(chat_id=GROUP_CHAT_ID, photo=file.file_id, caption=caption, parse_mode="Markdown")
+    await update.message.reply_text("📤 Ketish vaqti yozildi.")
+    return ConversationHandler.END
+
+async def profil(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    sheet = get_sheet()
+    rows = sheet.get_all_records()
+    kunlar = 0
+    soatlar = 0.0
+    for row in rows:
+        if str(row["Telegram ID"]) == str(user.id):
+            kunlar += 1
+            try:
+                ishlagan = float(row.get("Ishlagan vaqt", 0))  # 6-ustun
+                soatlar += ishlagan
+            except:
+                pass
+    await update.message.reply_text(
+        f"👤 {user.full_name}\n📆 Ishlagan kunlar: {kunlar}\n🕒 Umumiy ish vaqti: {round(soatlar, 2)} soat"
+    )
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("❌ Bekor qilindi", reply_markup=ReplyKeyboardRemove())
+    return ConversationHandler.END
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    ch = ConversationHandler(entry_points=[MessageHandler(filters.Regex("^📍 Kelish$"),kel_start),
-                                            MessageHandler(filters.Regex("^🏁 Ketish$"),ket_start)],
-                             states={KEL:[MessageHandler(filters.PHOTO,kel_done)],KET:[MessageHandler(filters.PHOTO,ket_done)]},
-                             fallbacks=[CommandHandler("cancel", cancel)])
+
+    conv_handler = ConversationHandler(
+        entry_points=[
+            MessageHandler(filters.Regex("^📍 Kelish$"), kelish),
+            MessageHandler(filters.Regex("^🏁 Ketish$"), ketish)
+        ],
+        states={
+            KELISH: [MessageHandler(filters.PHOTO, rasm_kelish)],
+            KETISH: [MessageHandler(filters.PHOTO, rasm_ketish)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(ch)
-    app.add_handler(MessageHandler(filters.Regex("^👤 Profilim$"),profil))
-    print("Bot polling started...")  # bu yerda log yozuvi
+    app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.Regex("^👤 Profilim$"), profil))
+
+    print("✅ Bot polling started...")
     app.run_polling()
 
-if __name__=="__main__": main()
+if __name__ == "__main__":
+    main()
