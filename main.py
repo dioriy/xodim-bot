@@ -5,7 +5,7 @@ import pytz
 import gspread
 from google.oauth2.service_account import Credentials
 from telegram import (
-    Update, KeyboardButton, ReplyKeyboardMarkup
+    Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -20,8 +20,8 @@ GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
-# Bosqichlar
-ASK_ROLE, ASK_NAME, ASK_PHONE, MAIN_MENU, WAIT_PHOTO, = range(5)
+# States
+ASK_ROLE, ASK_NAME, ASK_PHONE, MAIN_MENU, WAIT_PHOTO, WAIT_LOCATION, = range(6)
 user_info = {}
 
 def get_sheet():
@@ -50,7 +50,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user_info[user_id]['role'] = update.message.text
-    await update.message.reply_text("Ism familiyangizni kiriting:")
+    await update.message.reply_text("Ism familiyangizni kiriting:", reply_markup=ReplyKeyboardRemove())
     return ASK_NAME
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -82,7 +82,7 @@ async def main_menu_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message.text
     if msg == "📍 Ishga keldim":
         context.user_data['status'] = "kelish"
-        await update.message.reply_text("📸 Ishga kelganingizni tasdiqlovchi rasm yuboring:")
+        await update.message.reply_text("📸 Rasm yuboring:")
         return WAIT_PHOTO
     elif msg == "🏁 Ishdan ketdim":
         context.user_data['status'] = "ketish"
@@ -106,39 +106,97 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     data = user_info.get(user_id, {})
     status = context.user_data.get('status')
-    if not data or not status:
-        await update.message.reply_text("Avval 'Ishga keldim' yoki 'Ishdan ketdim' tugmasini bosing!")
-        return MAIN_MENU
-    # Rasm va ma'lumotlarni saqlash
     t = now()
+    photo_id = update.message.photo[-1].file_id
+
+    # Lokatsiya so'rash
+    if status == "kelish":
+        context.user_data['photo_id'] = photo_id
+        await update.message.reply_text("📍 Lokatsiyangizni yuboring:", 
+            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Lokatsiyani yuborish", request_location=True)]], resize_keyboard=True))
+        return WAIT_LOCATION
+    else:  # ketish
+        # Sheetsdan xodimning eng so‘nggi bugungi qatordan topish
+        sheet = get_sheet()
+        rows = sheet.get_all_records()
+        index = None
+        for i, row in enumerate(rows, 2):  # 2 dan boshlanadi (1 - header)
+            if (row['F.I.Sh.'] == data.get('name')) and row['Sana'] == t.strftime("%Y-%m-%d") and not row['Ketgan vaqt']:
+                index = i
+                break
+        if index:
+            ketgan_vaqt = t.strftime("%H:%M:%S")
+            kelgan_vaqt = rows[index-2]['Kelgan vaqt']
+            # Ishlagan soat
+            fmt = "%H:%M:%S"
+            try:
+                kel = datetime.strptime(kelgan_vaqt, fmt)
+                ket = datetime.strptime(ketgan_vaqt, fmt)
+                ish_soat = (ket - kel).total_seconds() / 3600
+                ish_soat = round(ish_soat, 2)
+            except Exception:
+                ish_soat = ""
+            sheet.update(f"G{index}", ketgan_vaqt)
+            sheet.update(f"H{index}", ish_soat)
+            sheet.update(f"I{index}", "Ketdi")
+        else:
+            await update.message.reply_text("❌ Avval 'Ishga keldim'ni bosing!")
+            return MAIN_MENU
+
+        # Guruhga rasm va ma'lumot
+        group_msg = f"""📝 Xodim hisoboti
+
+👤 Ism: {data.get('name')}
+🏢 Lavozim: {data.get('role')}
+📞 Telefon: {data.get('phone')}
+⏰ Vaqt: {t.strftime('%Y-%m-%d %H:%M:%S')}
+🔄 Harakat: Ishdan ketdi"""
+        await context.bot.send_photo(
+            chat_id=GROUP_CHAT_ID,
+            photo=photo_id,
+            caption=group_msg
+        )
+        await update.message.reply_text("✅ Qayd etildi. Amal tanlang:",
+            reply_markup=ReplyKeyboardMarkup([
+                [KeyboardButton("📍 Ishga keldim"), KeyboardButton("🏁 Ishdan ketdim"), KeyboardButton("👤 Profilim")]
+            ], resize_keyboard=True)
+        )
+        context.user_data['status'] = None
+        return MAIN_MENU
+
+async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    data = user_info.get(user_id, {})
+    t = now()
+    photo_id = context.user_data.get('photo_id')
+    loc = update.message.location
     sheet = get_sheet()
     sheet.append_row([
         t.strftime("%Y-%m-%d"),
         t.strftime("%H:%M:%S"),
+        user_id,
         data.get('name'), data.get('role'), data.get('phone'),
-        "Keldi" if status == "kelish" else "Ketdi",
-        update.effective_user.username or "",
-        str(user_id)
+        "", "", "Keldi",
+        f"{loc.latitude},{loc.longitude}"
     ])
-    photo_id = update.message.photo[-1].file_id
     group_msg = f"""📝 Xodim hisoboti
 
 👤 Ism: {data.get('name')}
 🏢 Lavozim: {data.get('role')}
 📞 Telefon: {data.get('phone')}
 ⏰ Vaqt: {t.strftime('%Y-%m-%d %H:%M:%S')}
-🔄 Harakat: {"Ishga keldi" if status=="kelish" else "Ishdan ketdi"}"""
+🔄 Harakat: Ishga keldi
+📍 Lokatsiya: {loc.latitude},{loc.longitude}
+"""
     await context.bot.send_photo(
         chat_id=GROUP_CHAT_ID,
         photo=photo_id,
         caption=group_msg
     )
     await update.message.reply_text("✅ Qayd etildi. Amal tanlang:",
-        reply_markup=ReplyKeyboardMarkup([[
-            KeyboardButton("📍 Ishga keldim"),
-            KeyboardButton("🏁 Ishdan ketdim"),
-            KeyboardButton("👤 Profilim")
-        ]], resize_keyboard=True)
+        reply_markup=ReplyKeyboardMarkup([
+            [KeyboardButton("📍 Ishga keldim"), KeyboardButton("🏁 Ishdan ketdim"), KeyboardButton("👤 Profilim")]
+        ], resize_keyboard=True)
     )
     context.user_data['status'] = None
     return MAIN_MENU
@@ -158,7 +216,8 @@ def main():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, main_menu_text),
                 MessageHandler(filters.PHOTO, photo_outside)
             ],
-            WAIT_PHOTO: [MessageHandler(filters.PHOTO, save_photo)]
+            WAIT_PHOTO: [MessageHandler(filters.PHOTO, save_photo)],
+            WAIT_LOCATION: [MessageHandler(filters.LOCATION, save_location)]
         },
         fallbacks=[CommandHandler("start", start)],
         per_message=False
