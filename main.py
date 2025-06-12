@@ -115,7 +115,6 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             resize_keyboard=True
         )
     )
-    # Qaysi status ekanini keyingi bosqichga olib o‘tish
     context.user_data['kelish_uchun'] = (status == "kelish")
     return WAIT_LOCATION
 
@@ -186,10 +185,10 @@ async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 ishlagan_soat = ""
 
-            sheet.update(f"C{found_row}", [[ketgan_vaqt]])
-            sheet.update(f"H{found_row}", [[ishlagan_soat]])
-            sheet.update(f"I{found_row}", [["Ketdi"]])
-            sheet.update(f"J{found_row}", [[f"{loc.latitude},{loc.longitude}"]])
+            sheet.update(f"C{found_row}", [[ketgan_vaqt]])  # Ketgan vaqt
+            sheet.update(f"H{found_row}", [[ishlagan_soat]]) # Ishlagan vaqt (soat)
+            sheet.update(f"I{found_row}", [["Ketdi"]])       # Holat
+            sheet.update(f"J{found_row}", [[f"{loc.latitude},{loc.longitude}"]]) # Lokatsiya (Ketish)
 
             group_msg = f"""📝 Xodim hisoboti
 
