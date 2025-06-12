@@ -121,13 +121,13 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rows = sheet.get_all_values()
         found_row = None
         today = t.strftime("%Y-%m-%d")
+        # Ustunlar: Sana|Kelgan|Ketgan|ID|Ism|Lavozim|Tel|Ishlagan|Holat|Rasm
         for idx in range(len(rows)-1, 0, -1):
             row = rows[idx]
-            # Ustunlar: Sana|Kelgan|Ketgan|ID|Ism|Lavozim|Tel|Ishlagan|Holat|Rasm
             if (
                 row[0] == today and
                 str(row[3]) == str(user_id) and
-                row[8] == "Keldi" and
+                row[8].strip().lower() == "keldi" and
                 row[2] == ""
             ):
                 found_row = idx+1  # Google Sheets 1-based
