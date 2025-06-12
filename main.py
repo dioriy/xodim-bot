@@ -117,21 +117,25 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAIT_LOCATION
 
     elif status == "ketish":
-        # Faqat bugungi va aynan shu foydalanuvchi uchun "Keldi" statusdagi qatorni izlash!
         sheet = get_sheet()
         rows = sheet.get_all_values()
         found_row = None
         today = t.strftime("%Y-%m-%d")
-        for idx in range(len(rows)-1, 0, -1):  # oxirdan boshlab
+        for idx in range(len(rows)-1, 0, -1):
             row = rows[idx]
-            # Telegram ID ni faqat int yoki str(user_id) orqali solishtiramiz!
-            if (row[0] == today and str(row[2]) == str(user_id) and row[8] == "Keldi" and row[6] == ""):
+            # Ustunlar: Sana|Kelgan|Ketgan|ID|Ism|Lavozim|Tel|Ishlagan|Holat|Rasm
+            if (
+                row[0] == today and
+                str(row[3]) == str(user_id) and
+                row[8] == "Keldi" and
+                row[2] == ""
+            ):
                 found_row = idx+1  # Google Sheets 1-based
                 break
 
         if found_row:
             ketgan_vaqt = t.strftime("%H:%M:%S")
-            kelgan_vaqt = rows[found_row-1][1]  # "Kelgan vaqt" ustuni (index 1)
+            kelgan_vaqt = rows[found_row-1][1]
             fmt = "%H:%M:%S"
             try:
                 t1 = datetime.strptime(kelgan_vaqt, fmt)
@@ -141,9 +145,9 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except Exception:
                 ishlagan_soat = ""
 
-            sheet.update(f"G{found_row}", ketgan_vaqt)            # Ketgan vaqt
-            sheet.update(f"H{found_row}", ishlagan_soat)          # Ishlagan vaqt (soat)
-            sheet.update(f"I{found_row}", "Ketdi")                # Holat
+            sheet.update(f"C{found_row}", ketgan_vaqt)      # Ketgan vaqt (C ustun)
+            sheet.update(f"H{found_row}", ishlagan_soat)    # Ishlagan vaqt (H ustun)
+            sheet.update(f"I{found_row}", "Ketdi")          # Holat (I ustun)
 
             group_msg = f"""📝 Xodim hisoboti
 
@@ -176,11 +180,16 @@ async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     loc = update.message.location
     sheet = get_sheet()
     sheet.append_row([
-        t.strftime("%Y-%m-%d"),
-        t.strftime("%H:%M:%S"),
-        str(user_id),  # Telegram ID aniq yoziladi!
-        data.get('name'), data.get('role'), data.get('phone'),
-        "", "", "Keldi", f"{loc.latitude},{loc.longitude}"
+        t.strftime("%Y-%m-%d"),          # Sana
+        t.strftime("%H:%M:%S"),          # Kelgan vaqt
+        "",                              # Ketgan vaqt
+        str(user_id),                    # Telegram ID
+        data.get('name'),                # Ism familiya
+        data.get('role'),                # Lavozim
+        data.get('phone'),               # Telefon raqam
+        "",                              # Ishlagan vaqt (soat)
+        "Keldi",                         # Holat
+        f"{loc.latitude},{loc.longitude}"# Rasm yoki Lokatsiya
     ])
     group_msg = f"""📝 Xodim hisoboti
 
