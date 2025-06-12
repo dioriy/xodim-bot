@@ -5,7 +5,7 @@ import pytz
 import gspread
 from google.oauth2.service_account import Credentials
 from telegram import (
-    Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, ReplyKeyboardMarkup
+    Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
 )
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -21,7 +21,7 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
 # States
-ASK_ROLE, ASK_NAME, ASK_PHONE, MAIN_MENU, WAIT_PHOTO, WAIT_LOCATION, = range(6)
+ASK_ROLE, ASK_NAME, ASK_PHONE, MAIN_MENU, WAIT_PHOTO, WAIT_LOCATION = range(6)
 user_info = {}
 
 def get_sheet():
@@ -109,60 +109,68 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     t = now()
     photo_id = update.message.photo[-1].file_id
 
-    # Lokatsiya so'rash
     if status == "kelish":
         context.user_data['photo_id'] = photo_id
-        await update.message.reply_text("📍 Lokatsiyangizni yuboring:", 
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Lokatsiyani yuborish", request_location=True)]], resize_keyboard=True))
+        await update.message.reply_text("📍 Lokatsiyangizni yuboring:",
+            reply_markup=ReplyKeyboardMarkup(
+                [[KeyboardButton("Lokatsiyani yuborish", request_location=True)]],
+                resize_keyboard=True))
         return WAIT_LOCATION
-    else:  # ketish
-        # Sheetsdan xodimning eng so‘nggi bugungi qatordan topish
+
+    elif status == "ketish":
+        # Eng so‘nggi "Keldi" qatorini topamiz
         sheet = get_sheet()
-        rows = sheet.get_all_records()
-        index = None
-        for i, row in enumerate(rows, 2):  # 2 dan boshlanadi (1 - header)
-            if (row['F.I.Sh.'] == data.get('name')) and row['Sana'] == t.strftime("%Y-%m-%d") and not row['Ketgan vaqt']:
-                index = i
+        rows = sheet.get_all_values()
+        found_row = None
+        user_name = data.get('name')
+        today = t.strftime("%Y-%m-%d")
+
+        for idx in range(len(rows)-1, 0, -1):  # oxirdan boshlab
+            row = rows[idx]
+            if (row[0] == today and row[2] == user_name and row[8] == "Keldi" and row[6] == ""):
+                found_row = idx+1  # Google Sheets 1-based
                 break
-        if index:
+
+        if found_row:
             ketgan_vaqt = t.strftime("%H:%M:%S")
-            kelgan_vaqt = rows[index-2]['Kelgan vaqt']
-            # Ishlagan soat
+            kelgan_vaqt = rows[found_row-1][5]  # "Kelgan vaqt"
+            # Ishlagan vaqt hisobi
             fmt = "%H:%M:%S"
             try:
-                kel = datetime.strptime(kelgan_vaqt, fmt)
-                ket = datetime.strptime(ketgan_vaqt, fmt)
-                ish_soat = (ket - kel).total_seconds() / 3600
-                ish_soat = round(ish_soat, 2)
+                t1 = datetime.strptime(kelgan_vaqt, fmt)
+                t2 = datetime.strptime(ketgan_vaqt, fmt)
+                farq = (t2-t1).total_seconds()/3600
+                ishlagan_soat = round(farq if farq > 0 else (farq + 24), 2)
             except Exception:
-                ish_soat = ""
-            sheet.update(f"G{index}", ketgan_vaqt)
-            sheet.update(f"H{index}", ish_soat)
-            sheet.update(f"I{index}", "Ketdi")
-        else:
-            await update.message.reply_text("❌ Avval 'Ishga keldim'ni bosing!")
-            return MAIN_MENU
+                ishlagan_soat = ""
 
-        # Guruhga rasm va ma'lumot
-        group_msg = f"""📝 Xodim hisoboti
+            sheet.update(f"G{found_row}", ketgan_vaqt)            # Ketgan vaqt
+            sheet.update(f"H{found_row}", ishlagan_soat)          # Ishlagan vaqt (soat)
+            sheet.update(f"I{found_row}", "Ketdi")                # Holat
+            sheet.update(f"J{found_row}", "")                     # Rasm ustuni tozalash (ixtiyoriy)
+            # Guruhga xabar
+            group_msg = f"""📝 Xodim hisoboti
 
 👤 Ism: {data.get('name')}
 🏢 Lavozim: {data.get('role')}
 📞 Telefon: {data.get('phone')}
 ⏰ Vaqt: {t.strftime('%Y-%m-%d %H:%M:%S')}
 🔄 Harakat: Ishdan ketdi"""
-        await context.bot.send_photo(
-            chat_id=GROUP_CHAT_ID,
-            photo=photo_id,
-            caption=group_msg
-        )
-        await update.message.reply_text("✅ Qayd etildi. Amal tanlang:",
-            reply_markup=ReplyKeyboardMarkup([
-                [KeyboardButton("📍 Ishga keldim"), KeyboardButton("🏁 Ishdan ketdim"), KeyboardButton("👤 Profilim")]
-            ], resize_keyboard=True)
-        )
-        context.user_data['status'] = None
-        return MAIN_MENU
+            await context.bot.send_photo(
+                chat_id=GROUP_CHAT_ID,
+                photo=photo_id,
+                caption=group_msg
+            )
+            await update.message.reply_text("✅ Qayd etildi. Amal tanlang:",
+                reply_markup=ReplyKeyboardMarkup([
+                    [KeyboardButton("📍 Ishga keldim"), KeyboardButton("🏁 Ishdan ketdim"), KeyboardButton("👤 Profilim")]
+                ], resize_keyboard=True)
+            )
+            context.user_data['status'] = None
+            return MAIN_MENU
+        else:
+            await update.message.reply_text("❌ Avval 'Ishga keldim'ni bosing!")
+            return MAIN_MENU
 
 async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -176,8 +184,7 @@ async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
         t.strftime("%H:%M:%S"),
         user_id,
         data.get('name'), data.get('role'), data.get('phone'),
-        "", "", "Keldi",
-        f"{loc.latitude},{loc.longitude}"
+        "", "", "Keldi", f"{loc.latitude},{loc.longitude}"
     ])
     group_msg = f"""📝 Xodim hisoboti
 
