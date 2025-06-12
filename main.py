@@ -161,9 +161,9 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         ishlagan_soat = ""
 
-                    sheet.update(f"C{found_row}", ketgan_vaqt)      # Ketgan vaqt (C ustun)
-                    sheet.update(f"H{found_row}", ishlagan_soat)    # Ishlagan vaqt (H ustun)
-                    sheet.update(f"I{found_row}", "Ketdi")          # Holat (I ustun)
+                    sheet.update(f"C{found_row}", [[ketgan_vaqt]])      # Ketgan vaqt (C ustun)
+                    sheet.update(f"H{found_row}", [[ishlagan_soat]])    # Ishlagan vaqt (H ustun)
+                    sheet.update(f"I{found_row}", [["Ketdi"]])          # Holat (I ustun)
 
                     group_msg = f"""📝 Xodim hisoboti
 
