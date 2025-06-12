@@ -20,7 +20,6 @@ GROUP_CHAT_ID = int(os.getenv("GROUP_CHAT_ID"))
 SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 CREDS_JSON = os.getenv("GOOGLE_CREDS_JSON")
 
-# States
 ASK_ROLE, ASK_NAME, ASK_PHONE, MAIN_MENU, WAIT_PHOTO, WAIT_LOCATION = range(6)
 user_info = {}
 
@@ -118,23 +117,21 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WAIT_LOCATION
 
     elif status == "ketish":
-        # Eng so‘nggi "Keldi" qatorini topamiz
+        # Faqat bugungi va aynan shu foydalanuvchi uchun "Keldi" statusdagi qatorni izlash!
         sheet = get_sheet()
         rows = sheet.get_all_values()
         found_row = None
-        user_name = data.get('name')
         today = t.strftime("%Y-%m-%d")
-
         for idx in range(len(rows)-1, 0, -1):  # oxirdan boshlab
             row = rows[idx]
-            if (row[0] == today and row[2] == user_name and row[8] == "Keldi" and row[6] == ""):
+            # Telegram ID ni faqat int yoki str(user_id) orqali solishtiramiz!
+            if (row[0] == today and str(row[2]) == str(user_id) and row[8] == "Keldi" and row[6] == ""):
                 found_row = idx+1  # Google Sheets 1-based
                 break
 
         if found_row:
             ketgan_vaqt = t.strftime("%H:%M:%S")
-            kelgan_vaqt = rows[found_row-1][5]  # "Kelgan vaqt"
-            # Ishlagan vaqt hisobi
+            kelgan_vaqt = rows[found_row-1][1]  # "Kelgan vaqt" ustuni (index 1)
             fmt = "%H:%M:%S"
             try:
                 t1 = datetime.strptime(kelgan_vaqt, fmt)
@@ -147,8 +144,7 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sheet.update(f"G{found_row}", ketgan_vaqt)            # Ketgan vaqt
             sheet.update(f"H{found_row}", ishlagan_soat)          # Ishlagan vaqt (soat)
             sheet.update(f"I{found_row}", "Ketdi")                # Holat
-            sheet.update(f"J{found_row}", "")                     # Rasm ustuni tozalash (ixtiyoriy)
-            # Guruhga xabar
+
             group_msg = f"""📝 Xodim hisoboti
 
 👤 Ism: {data.get('name')}
@@ -182,7 +178,7 @@ async def save_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sheet.append_row([
         t.strftime("%Y-%m-%d"),
         t.strftime("%H:%M:%S"),
-        user_id,
+        str(user_id),  # Telegram ID aniq yoziladi!
         data.get('name'), data.get('role'), data.get('phone'),
         "", "", "Keldi", f"{loc.latitude},{loc.longitude}"
     ])
